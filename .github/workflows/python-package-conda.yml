@@ -1,0 +1,1992 @@
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+import shutil
+import sv_ttk
+import os
+import csv
+import json
+from xml.etree.ElementTree import Element, SubElement, ElementTree
+import pandas as pd
+from datetime import datetime, time
+import re
+import platform
+import glob
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib.pyplot as plt
+import seaborn as sns
+from PIL import Image, ImageTk
+
+# Constants for folder paths and file patterns
+BASE_DRIVE = "C:/" if platform.system() == "Windows" else "/"
+BASE_PATH = os.path.join(BASE_DRIVE, "Summative_Data_Set")
+ARCHIVE_FOLDER = os.path.join(BASE_PATH, "Archive")
+INPUT_FOLDER = os.path.join(BASE_PATH, "Input")
+
+def check_directories():
+    """
+    Check if the specified directories exist and return a list of missing directories.
+    """
+    # Get the OS that is running the code.
+    os_name = platform.system()
+    
+    # Set the main drive based on the OS.
+    if os_name == "Windows":
+        main_drive = "C:/"
+    elif os_name == "Darwin":  # MacOS
+        main_drive = "/"
+    else:
+        main_drive = "/"  # Unix/Linux
+
+    # Define the folder structure.
+    base = os.path.join(main_drive, "Summative_Data_Set")
+    archive = os.path.join(base, "Archive")
+    input_folder = os.path.join(base, "Input")
+    
+    # List of folders to check.
+    folders_to_check = [base, archive, input_folder]
+    
+    # Return folders that do not exist.
+    missing_folders = [f for f in folders_to_check if not os.path.exists(f)]
+    return missing_folders
+
+def create_directories(folders):
+    """
+    Create the specified directories if they do not already exist.
+    """
+    for folder in folders:
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+            print(f"Created folder: {folder}")
+        else:
+            print(f"Folder already exists: {folder}")
+    messagebox.showinfo("Proceeding", f"All the required folders were created {folders}.")
+
+def ask_user_to_proceed(missing_folders):
+    """
+    Ask the user whether to proceed with creating the directories.
+    """
+    root = tk.Tk()
+    sv_ttk.set_theme("dark")  # Apply the dark Sun Valley theme
+    root.withdraw()  # Hide the root window
+    
+    # Message to display
+    message = (f"The following directories are missing:\n\n"
+               f"{', '.join(missing_folders)}\n\n"
+               "These directories are required for the application to operate.\n\n"
+               "Do you want to proceed with creating them?\n"
+               "If you select 'No,' the application will terminate.")
+    
+    # Show a yes/no message box
+    proceed = messagebox.askyesno("Missing Directories", message)
+    root.destroy()  # Close the tkinter GUI after the prompt
+    
+    return proceed
+
+def check_existing_files():
+    """
+    Check if the required files exist in the /Input folder.
+    
+    The required files are in either of the following formats:
+    - yyyy_mm_dd_hh_mm_ACTIVITY_LOG.json
+    - yyyy_mm_dd_hh_mm_USER_LOG.json
+    - yyyy_mm_dd_hh_mm_COMPONENT_CODES.json
+    
+    OR
+    
+    - yyyy_mm_dd_hh_mm_ACTIVITY_LOG_cleaned.json
+    - yyyy_mm_dd_hh_mm_USER_LOG_cleaned.json
+    - yyyy_mm_dd_hh_mm_COMPONENT_CODES_cleaned.json
+    """
+    # Determine the base drive based on the OS
+    os_name = platform.system()
+    if os_name == "Windows":
+        base_drive = "C:/"
+    else:  # For MacOS or Unix/Linux
+        base_drive = "/"
+    
+    # Construct the input folder path
+    input_folder = os.path.join(base_drive, "Summative_Data_Set", "Input")
+    
+    # Define file patterns to check
+    patterns = [
+        os.path.join(input_folder, "*_ACTIVITY_LOG.json"),
+        os.path.join(input_folder, "*_USER_LOG.json"),
+        os.path.join(input_folder, "*_COMPONENT_CODES.json"),
+    ]
+    
+    cleaned_patterns = [
+        os.path.join(input_folder, "*_ACTIVITY_LOG_cleaned.json"),
+        os.path.join(input_folder, "*_USER_LOG_cleaned.json"),
+        os.path.join(input_folder, "*_COMPONENT_CODES_cleaned.json"),
+    ]
+    
+    # Check for files matching either set of patterns
+    files = [glob.glob(pattern) for pattern in patterns]
+    cleaned_files = [glob.glob(pattern) for pattern in cleaned_patterns]
+    
+    # Flatten lists and check if all required files exist
+    files_exist = all(files)  # Check if all non-cleaned patterns matched files
+    cleaned_files_exist = all(cleaned_files)  # Check if all cleaned patterns matched files
+    
+    if files_exist:
+        print("All required files (non-cleaned) are present in the Input folder.")
+        return "files_exist"
+    elif cleaned_files_exist:
+        print("All required cleaned files are present in the Input folder.")
+        return "cleaned_files_exist"
+    else:
+        # Determine missing files
+        missing_files = []
+        for i, pattern in enumerate(patterns):
+            if not files[i]:
+                missing_files.append(os.path.basename(pattern))
+        for i, pattern in enumerate(cleaned_patterns):
+            if not cleaned_files[i]:
+                missing_files.append(os.path.basename(pattern))
+        
+        print(f"The following required files are missing: {', '.join(missing_files)}")
+        return "no_files_exist"
+
+
+def upload_files():
+    def go_back():
+        root.destroy()
+        home_page()
+
+    def go_to_data_cleansing():
+        if all_files_uploaded():
+            messagebox.showinfo("Proceeding", "You can now proceed to Data Cleansing.")
+            root.destroy()
+            data_cleansing_page()
+        else:
+            messagebox.showwarning("Missing Files", "All three files should be uploaded to continue.")
+
+    def all_files_uploaded():
+        # Check if all required files are uploaded
+        return file_labels[0].cget("text") != "No file selected" and \
+               file_labels[1].cget("text") != "No file selected" and \
+               file_labels[2].cget("text") != "No file selected"
+
+    def validate_user_log_csv(file_path):
+        try:
+            with open(file_path, newline='', encoding='utf-8') as csvfile:
+                reader = csv.reader(csvfile)
+                headers = next(reader, None)
+                if not headers:
+                    return False
+                required_headers = ["Date", "Time", "User Full Name *Anonymized"]
+                if len(headers) < len(required_headers):
+                    return False
+                return all(header in headers for header in required_headers)
+        except Exception as e:
+            messagebox.showerror("Error", f"Error reading file: {e}")
+            return False
+
+    def validate_activity_log_csv(file_path):
+        try:
+            with open(file_path, newline='', encoding='utf-8') as csvfile:
+                reader = csv.reader(csvfile)
+                headers = next(reader, None)
+                if not headers:
+                    return False
+                required_headers = ["User Full Name *Anonymized", "Component", "Action", "Target"]
+                if len(headers) < len(required_headers):
+                    return False
+                return all(header in headers for header in required_headers)
+        except Exception as e:
+            messagebox.showerror("Error", f"Error reading file: {e}")
+            return False
+
+    def validate_component_codes_csv(file_path):
+        try:
+            with open(file_path, newline='', encoding='utf-8') as csvfile:
+                reader = csv.reader(csvfile)
+                headers = next(reader, None)
+                if not headers:
+                    return False
+                required_headers = ["Component", "Code"]
+                if len(headers) < len(required_headers):
+                    return False
+                return all(header in headers for header in required_headers)
+        except Exception as e:
+            messagebox.showerror("Error", f"Error reading file: {e}")
+            return False
+
+    def upload_csv(button_index, validate_func, file_type):
+        #destination_dir = "C:/Summative_Data_Set/Input"
+        # Define the folder paths
+        base_drive = "C:/" if platform.system() == "Windows" else "/"
+        base_path = os.path.join(base_drive, "Summative_Data_Set")
+        destination_dir = os.path.join(base_path, "Input")
+        if not os.path.exists(destination_dir):
+            os.makedirs(destination_dir)  # Create the directory if it doesn't exist
+
+        # Check if a file has already been uploaded for this type
+        current_file = file_labels[button_index].cget("text")
+        if current_file != "No file selected":
+            # Show confirmation dialog
+            overwrite_message = f"You've already uploaded a {file_type} file. If you upload another, the previous one ({current_file}) will be deleted."
+            proceed = messagebox.askyesno("Replace Existing File", overwrite_message)
+            if not proceed:
+                return
+
+        # Open file dialog to select a new file
+        file_path = filedialog.askopenfilename(
+            title="Select a CSV File",
+            filetypes=(("CSV Files", "*.csv"), ("All Files", "*.*"))
+        )
+
+        if file_path:
+            try:
+                file_name = os.path.basename(file_path)
+                if not file_name.lower().endswith(".csv"):
+                    messagebox.showerror("Invalid File Type", "The selected file is not a CSV file.")
+                    return
+
+                if os.path.getsize(file_path) == 0:
+                    messagebox.showerror("Empty File", "The selected file is empty. Please select a valid CSV file.")
+                    return
+
+                # Validate the CSV using the appropriate validation function
+                if not validate_func(file_path):
+                    messagebox.showerror("Invalid CSV", "The CSV file does not contain the required headers or columns.")
+                    return
+
+                # If a file is already uploaded, delete it
+                if current_file != "No file selected":
+                    old_file_path = os.path.join(destination_dir, current_file)
+                    os.remove(old_file_path)
+                    print(f"Deleted previous {file_type} file: {current_file}")
+
+                # Copy the new file to the destination directory
+                destination_path = os.path.join(destination_dir, file_name)
+                shutil.copy(file_path, destination_path)
+
+                # Update the corresponding label with the file name
+                file_labels[button_index].config(text=file_name)
+
+                messagebox.showinfo("Success", f"File uploaded to: {destination_path}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to upload and process file: {e}")
+        else:
+            messagebox.showwarning("No Selection", "No file was selected.")
+
+    root = tk.Tk()
+    root.title("Add New Data")
+    root.geometry("500x350")
+
+    # Apply the dark theme
+    sv_ttk.set_theme("dark")
+
+    # Add a Back button at the top-left corner
+    back_button = ttk.Button(root, text="Back", command=go_back)
+    back_button.place(x=10, y=10)
+
+    instruction_label = ttk.Label(
+        root,
+        text="Upload the required CSV files below.",
+        wraplength=350,
+        justify="center"
+    )
+    instruction_label.pack(pady=20)
+
+    # Labels and buttons for each upload
+    file_labels = []
+    labels = ["User Log", "Activity Log", "Component Codes"]
+
+    for i, label_text in enumerate(labels):
+        frame = ttk.Frame(root)
+        frame.pack(pady=5, anchor="w", padx=20)
+
+        # Add descriptive label
+        label = ttk.Label(frame, text=f"{label_text}:", width=20, anchor="e")
+        label.pack(side=tk.LEFT, padx=5)
+
+        # Define validation functions for each button
+        if label_text == "User Log":
+            validate_func = validate_user_log_csv
+            file_type = "user log"
+        elif label_text == "Activity Log":
+            validate_func = validate_activity_log_csv
+            file_type = "activity log"
+        elif label_text == "Component Codes":
+            validate_func = validate_component_codes_csv
+            file_type = "component codes"
+        else:
+            validate_func = lambda file_path: True  # For now, just a dummy function for other buttons
+            file_type = label_text.lower()
+
+        # Add upload button
+        upload_button = ttk.Button(frame, text="Upload", command=lambda idx=i, func=validate_func, ftype=file_type: upload_csv(idx, func, ftype))
+        upload_button.pack(side=tk.LEFT, padx=5)
+
+        # Add a label to show the uploaded file name
+        file_label = ttk.Label(frame, text="No file selected", width=30, anchor="w")
+        file_label.pack(side=tk.LEFT, padx=5)
+        file_labels.append(file_label)
+
+    # Add "Next" button at the bottom-right corner
+    next_button = ttk.Button(root, text="Next", command=go_to_data_cleansing)
+    next_button.place(x=400, y=300)  # Position at the bottom-right corner
+
+    root.mainloop()
+
+def data_manipulation():
+    try:
+        
+        def open_output_results():
+            # Destroy the current app window and open the Upload Files page
+            #root.destroy()
+            #output_results()
+            if data_manipulation_complete():
+                # messagebox.showinfo("Proceeding", "Data Cleansing is complete. You can now proceed to the next step.")
+                root.destroy()
+                output_results()  # Proceed to the next step (output results)
+            else:
+                messagebox.showwarning("Data Manipulation Incomplete", "Data manipulation must be completed before proceeding.")
+        
+        def data_manipulation_complete():
+            # Check if data cleaning is complete
+            return manipulation_status.get()  # assuming it's a BooleanVar that is set when cleaning is done
+        
+        def go_back():
+            move_files_from_input_to_archive()
+            root.destroy()
+            upload_files()
+        
+        # Initialize main window
+        root = tk.Tk()
+        root.title("Data Manipulation")
+        root.geometry("500x350")
+
+        # Apply the dark theme
+        sv_ttk.set_theme("dark")
+
+        # Progress bar and label
+        progress_label = ttk.Label(root, text="Progress:")
+        progress_label.pack(pady=10)
+        progress = ttk.Progressbar(root, orient="horizontal", length=400, mode="determinate", maximum=100)
+        progress.pack(pady=10)
+
+        # Variables to manage progress
+        progress_value = tk.IntVar(value=0)
+        progress["variable"] = progress_value
+        current_step = tk.IntVar(value=0)
+        
+        
+        # Check that all the dataframes exist in the input folder
+        # Define the folder paths
+        base_drive = "C:/" if platform.system() == "Windows" else "/"
+        base_path = os.path.join(base_drive, "Summative_Data_Set")
+        input_folder = os.path.join(base_path, "Input")
+        
+        # Check if the input folder exists
+        if not os.path.exists(input_folder):
+            # raise Exception(f"Input folder '{input_folder}' does not exist.")
+            messagebox.showinfo("Terminating", f"Input folder '{input_folder}' does not exist. Please run the application again.")
+            exit() # If a folder is missing, terminate the app. When it will run again, the first step will create the folder structure.
+        
+        
+        def load_required_dataframes(keys_activity_log, keys_user_log, keys_component_code):
+            # Required keys for activity_log and component_code files
+            #keys_activity_log = ["User Full Name *Anonymized", "Component", "Action", "Target"]
+            #keys_user_log = ["Date", "User Full Name *Anonymized"] # "Time" was removed in cleansing - merged with "Date"
+            #keys_component_code = ["Component", "Code"]
+            
+            # Identify files with required keys
+            file_activity_log_path = None
+            file_user_log_path = None
+            file_component_code_path = None
+            df_activity_log = None
+            df_user_log = None
+            df_component_code = None
+            
+            
+            for file_name in os.listdir(input_folder):
+                if file_name.endswith('.json'):
+                    file_path = os.path.join(input_folder, file_name)
+                    
+                    # Load the JSON file into a DataFrame
+                    try:
+                        df = pd.read_json(file_path)
+                    except ValueError:
+                        print(f"Skipping invalid JSON file: {file_name}")
+                        continue
+                    
+                    # Check if it matches the activity_log file structure
+                    if set(keys_activity_log).issubset(df.columns) and file_activity_log_path is None:
+                        file_activity_log_path = file_path
+                        df_activity_log = df
+                    
+                    # Check if it matches the user_log file structure
+                    elif set(keys_user_log).issubset(df.columns) and file_user_log_path is None:
+                        file_user_log_path = file_path
+                        df_user_log = df
+                    
+                    # Check if it matches the component_code file structure
+                    elif set(keys_component_code).issubset(df.columns) and file_component_code_path is None:
+                        file_component_code_path = file_path
+                        df_component_code = df
+            
+            # Assume that dataframe will be found, unless otherwise
+            global check_dataframes
+            check_dataframes = True
+            
+            # Ensure both required DataFrames are loaded
+            if df_activity_log is None:
+                messagebox.showerror(
+                    "Error",
+                    "Activity log file not found or does not match expected structure.\nYou will now be redirected back to the upload screen."
+                )
+                check_dataframes = False
+            if df_user_log is None:
+                messagebox.showerror(
+                    "Error",
+                    "User log file not found or does not match expected structure.\nYou will now be redirected back to the upload screen."
+                )
+                check_dataframes = False
+            if df_component_code is None:
+                messagebox.showerror(
+                    "Error",
+                    "Component code file not found or does not match expected structure.\nYou will now be redirected back to the upload screen."
+                )
+                check_dataframes = False
+            
+            return df_activity_log, df_user_log, df_component_code, file_activity_log_path, file_user_log_path, file_component_code_path
+            
+        
+        # REMOVE
+        def remove():
+            
+            keys_activity_log = ["User Full Name *Anonymized", "Component", "Action", "Target"]
+            keys_user_log = ["Date", "User Full Name *Anonymized"] # "Time" was removed in cleansing - merged with "Date"
+            keys_component_code = ["Component", "Code"]
+            
+            # Load dataframes and folder paths
+            df_activity_log, df_user_log, df_component_code, file_activity_log_path, file_user_log_path, file_component_code_path = load_required_dataframes(keys_activity_log, keys_user_log, keys_component_code)
+            
+            # Step 1: Create a filtered DF for activity_log
+            df_remove_activity_log = df_activity_log[~df_activity_log['Component'].isin(['System', 'Folder'])]
+            
+            # Step 2: Identify the indexes/rows that were removed
+            removed_indices_activity_log = df_activity_log.index.difference(df_remove_activity_log.index)
+            
+            # Step 3: Create a filtered DF for user_log
+            # df_filtered_user_log = df_user_log.drop(removed_indices_activity_log)
+            # Remove rows in user_log corresponding to the removed rows in activity_log
+            if removed_indices_activity_log.empty:
+                df_remove_user_log = df_user_log  # No rows were removed
+            else:
+                df_remove_user_log = df_user_log.drop(removed_indices_activity_log, errors='ignore')
+                
+                # Ensure "Date" column retains its original format
+                if 'Date' in df_remove_user_log.columns:
+                    # Format "Date" to the desired string format
+                    df_remove_user_log['Date'] = pd.to_datetime(df_remove_user_log['Date'], format='%d/%m/%Y %H:%M:%S').dt.strftime('%d/%m/%Y %H:%M:%S')
+                    
+                    # Replace '\\/' with '/' in the "Date" column
+                    # UNECESSARY because I used json.dump which doesn't escape forward shlashes (\/)
+                    # The (\/) only appears in the json output due to the pandas serialisation behaviour
+                    #df_remove_user_log['Date'] = df_remove_user_log['Date'].str.replace(r'\\/', '/', regex=True)
+
+                
+                # Step 4: Store the filtered DFs for user_log and activity_log in new json files
+                remove_activity_log_path = file_activity_log_path.replace(".json", "_remove.json")
+                remove_user_log_path = file_user_log_path.replace(".json", "_remove.json")
+                
+                # Save filtered DataFrames
+                df_remove_activity_log.to_json(remove_activity_log_path, orient='records', indent=4)
+                #df_remove_user_log.to_json(remove_user_log_path, orient='records', indent=4)
+                # Save user log with custom encoder to avoid escaping forward slashes
+                with open(remove_user_log_path, 'w') as f:
+                    json.dump(
+                        json.loads(df_remove_user_log.to_json(orient='records')), 
+                        f, 
+                        indent=4
+                    )
+                
+                # Remove the original files
+                os.remove(file_activity_log_path)
+                os.remove(file_user_log_path)
+                
+                print(f"'Remove' data saved successfully, and original files have been removed.")
+            
+        def rename_user_id():
+            
+            keys_activity_log = ["User Full Name *Anonymized", "Component", "Action", "Target"]
+            keys_user_log = ["Date", "User Full Name *Anonymized"] # "Time" was removed in cleansing - merged with "Date"
+            keys_component_code = ["Component", "Code"]
+            
+            # Load dataframes and folder paths
+            df_activity_log, df_user_log, df_component_code, file_activity_log_path, file_user_log_path, file_component_code_path = load_required_dataframes(keys_activity_log, keys_user_log, keys_component_code)
+            
+            """
+            Process and rename the columns of the provided DataFrames, then rename the corresponding files 
+            and delete the originals.
+
+            Args:
+                df_activity_log (pd.DataFrame): The activity log DataFrame.
+                df_user_log (pd.DataFrame): The user log DataFrame.
+                file_activity_log_path (str): File path of the activity log JSON file.
+                file_user_log_path (str): File path of the user log JSON file.
+            """
+            # Step 1: Rename the column "User Full Name *Anonymized" to "User_ID" in both DataFrames
+            df_activity_log.rename(columns={"User Full Name *Anonymized": "User_ID"}, inplace=True)
+            df_user_log.rename(columns={"User Full Name *Anonymized": "User_ID"}, inplace=True)
+            
+            if 'Date' in df_user_log.columns:
+                # Ensure Date has the right date format
+                df_user_log['Date'] = pd.to_datetime(df_user_log['Date'], format='%d/%m/%Y %H:%M:%S').dt.strftime('%d/%m/%Y %H:%M:%S')
+            
+            # Step 2: Get the folder locations and rename the files
+            def rename_file(file_path, new_suffix="_rename.json"):
+                """Renames the file by changing its suffix to '_rename.json'."""
+                folder, file_name = os.path.split(file_path)
+                base_name, ext = os.path.splitext(file_name)
+                if base_name.endswith("_remove"):
+                    base_name = base_name.replace("_remove", new_suffix.replace(".json", ""))
+                new_file_path = os.path.join(folder, base_name + ext)
+                return new_file_path
+            
+            # Generate new file names
+            new_file_activity_log_path = rename_file(file_activity_log_path)
+            new_file_user_log_path = rename_file(file_user_log_path)
+            
+            # Step 3: Save the modified DataFrames to the new file names
+            df_activity_log.to_json(new_file_activity_log_path, orient="records", indent=4) # , lines=True
+            #df_user_log.to_json(new_file_user_log_path, orient="records", indent=4) # , lines=True
+            # Save user log with custom encoder to avoid escaping forward slashes
+            with open(new_file_user_log_path, 'w') as f:
+                json.dump(
+                    json.loads(df_user_log.to_json(orient='records')), 
+                    f, 
+                    indent=4
+                )
+            
+            # Step 4: Remove the original files
+            os.remove(file_activity_log_path)
+            os.remove(file_user_log_path)
+            
+            # Step 5: Print success message
+            print(f"'Rename' data saved successfully, and original files have been removed.")
+            print(f"New Activity Log Path: {new_file_activity_log_path}")
+            print(f"New User Log Path: {new_file_user_log_path}")
+        
+        def merge():
+            
+            keys_activity_log = ["User_ID", "Component", "Action", "Target"]
+            keys_user_log = ["Date", "User_ID"] # "Time" was removed in cleansing - merged with "Date"
+            keys_component_code = ["Component", "Code"]
+            
+            # Load dataframes and folder paths
+            df_activity_log, df_user_log, df_component_code, file_activity_log_path, file_user_log_path, file_component_code_path = load_required_dataframes(keys_activity_log, keys_user_log, keys_component_code)
+            
+            # Define the folder paths
+            base_drive = "C:/" if platform.system() == "Windows" else "/"
+            base_path = os.path.join(base_drive, "Summative_Data_Set")
+            input_folder = os.path.join(base_path, "Input")
+
+            # Check if the input folder exists
+            if not os.path.exists(input_folder):
+                # raise Exception(f"Input folder '{input_folder}' does not exist.")
+                messagebox.showinfo("Terminating", f"Input folder '{input_folder}' does not exist. Please run the application again.")
+                exit() # If a folder is missing, terminate the app. When it will run again, the first step will create the folder structure.
+            
+            print("Starting the merge process.")
+            
+            
+            # Check for positional alignment of User_ID values
+            mismatch_index = None
+            for idx, (user_log_id, activity_log_id) in enumerate(zip(df_user_log['User_ID'], df_activity_log['User_ID'])):
+                if user_log_id != activity_log_id:
+                    mismatch_index = idx
+                    break
+            
+            # If there is a mismatch, show a popup with the mismatch details
+            if mismatch_index is not None:
+                messagebox.showerror(
+                    "Merge Error",
+                    f"User_ID values are not aligned at row {mismatch_index + 1}. " # The +1 is added because an index count starts from 0
+                    "You will be redirected back to the upload files page."
+                )
+                go_back()
+            
+            # Combine DataFrames column-wise if all User_IDs match
+            merged_df = pd.concat([df_user_log, df_activity_log.drop(columns=['User_ID'])], axis=1)
+            
+            # Perform the merge
+            #merged_df = pd.merge(df_user_log, df_activity_log, on=["User_ID"], how="inner")
+            
+            # Perform the merge with a check for matching User_ID
+            """merged_df = pd.merge(
+                df_user_log, 
+                df_activity_log, 
+                on=["User_ID"], 
+                how="inner",  # Ensures only matching rows on User_ID are retained
+                validate="one_to_one"  # Ensures there are no duplicate matches
+            )"""
+            
+            if 'Date' in merged_df.columns:
+                # Ensure Date has the right date format
+                merged_df['Date'] = pd.to_datetime(merged_df['Date'], format='%d/%m/%Y %H:%M:%S').dt.strftime('%d/%m/%Y %H:%M:%S')
+            
+            # Save the merged dataframe to a JSON file in the input folder
+            output_file_path = os.path.join(input_folder, "merged_activity_and_user_log.json")
+            # merged_df.to_json(output_file_path, orient="records", lines=True)
+            # Save user log with custom encoder to avoid escaping forward slashes
+            with open(output_file_path, 'w') as f:
+                json.dump(
+                    json.loads(merged_df.to_json(orient='records')), 
+                    f, 
+                    indent=4
+                )
+
+            print(f"Merged file saved as: {output_file_path}")
+            
+            # Step 4: Remove the original files
+            os.remove(file_activity_log_path)
+            os.remove(file_user_log_path)
+            
+            print("Original files removed after successful merge.")
+        
+        def reshape_and_count():
+            
+            # https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes
+            
+            # Check that all the dataframes exist in the input folder
+            # Define the folder paths
+            base_drive = "C:/" if platform.system() == "Windows" else "/"
+            base_path = os.path.join(base_drive, "Summative_Data_Set")
+            input_folder = os.path.join(base_path, "Input")
+            
+            # Check if the input folder exists
+            if not os.path.exists(input_folder):
+                # raise Exception(f"Input folder '{input_folder}' does not exist.")
+                messagebox.showinfo("Terminating", f"Input folder '{input_folder}' does not exist. Please run the application again.")
+                exit() # If a folder is missing, terminate the app. When it will run again, the first step will create the folder structure.
+            
+            keys_merged_log = ["Date", "User_ID", "Component", "Action", "Target"]
+            
+            file_merged_log_path = None
+            df_merged_log = None
+            
+            for file_name in os.listdir(input_folder):
+                if file_name.endswith('.json'):
+                    file_path = os.path.join(input_folder, file_name)
+                    
+                    # Load the JSON file into a DataFrame
+                    try:
+                        df = pd.read_json(file_path, convert_dates=False) # https://pandas.pydata.org/docs/reference/api/pandas.read_json.html
+                    except ValueError:
+                        print(f"Skipping invalid JSON file: {file_name}")
+                        continue
+                    
+                    # Check if it matches the activity_log file structure
+                    if set(keys_merged_log).issubset(df.columns) and file_merged_log_path is None:
+                        file_merged_log_path = file_path
+                        df_merged_log = df
+                    
+            # Ensure required DataFrame is loaded
+            if df_merged_log is None:
+                messagebox.showerror(
+                    "Error",
+                    "Merged log file not found or does not match expected structure.\nYou will now be redirected back to the upload screen."
+                )
+                go_back()
+            
+            # Convert the "Date" field to datetime format and extract the month
+            #df['Date'] = pd.to_datetime(df['Date'], format='%d/%m/%Y %H:%M:%S')
+            #df['Month'] = df['Date'].dt.strftime('%B')  # Extract the month as a string
+            
+            # Converting the 'Date' column to pandas datetime format
+            df_merged_log['Date'] = pd.to_datetime(df_merged_log['Date'], format='%d/%m/%Y %H:%M:%S')
+
+            # Extracting the month's name
+            df_merged_log['Month'] = df_merged_log['Date'].dt.month_name()
+            
+            # Pivot table to count actions by User_ID, Month, and Component
+            pivoted = df.pivot_table(
+                index=['User_ID', 'Month'],   # Rows: User_ID and Month
+                columns='Component',         # Columns: Component names
+                values='Action',             # Values: Count actions
+                aggfunc='count',             # Aggregation: Count actions
+                fill_value=0                 # Fill missing values with 0
+            ).reset_index()
+            
+            # Group by User_ID and convert the data to a nested JSON structure
+            nested_json = (
+                pivoted.groupby('User_ID')
+                .apply(lambda x: x.drop(columns='User_ID').to_dict(orient='records'))
+                .reset_index(name='Monthly_Interactions')
+                .to_dict(orient='records')
+            )
+            
+            
+            # Save the new nested JSON to the same folder
+            output_file_path = os.path.join(input_folder, "reshaped_data.json")
+            try:
+                with open(output_file_path, 'w') as json_file:
+                    json.dump(nested_json, json_file, indent=4)
+                print(f"Reshaped JSON successfully saved to: {output_file_path}")
+            except Exception as e:
+                print(f"Failed to save the reshaped JSON file: {e}")
+
+            
+        # Define step functions
+        def step_1(): # REMOVE
+            progress_label.config(text="Step 1: Remove data from 'System' and 'Folder' Components.")
+            root.update()
+            remove()
+            #root.after(1000)  # Simulate processing with 1-second delay
+            current_step.set(current_step.get() + 1)
+            update_progress()
+
+        def step_2(): # RENAME
+            progress_label.config(text="Step 2: Rename the column 'User Full Name *Anonymized' to 'User_ID'.")
+            root.update()
+            rename_user_id()
+            #root.after(1000)  # Simulate processing
+            current_step.set(current_step.get() + 1)
+            update_progress()
+
+        def step_3(): # MERGE
+            progress_label.config(text="Step 3: Merge the activity log and user log files.")
+            root.update()
+            merge()
+            #root.after(1000)  # Simulate processing
+            current_step.set(current_step.get() + 1)
+            update_progress()
+
+        def step_4(): # RESHAPE AND COUNT
+            progress_label.config(text="Step 4: Reshape the dataset and count the interactions per user with the components for each month.")
+            root.update()
+            reshape_and_count()
+            #root.after(1000)  # Simulate processing
+            current_step.set(current_step.get() + 1)
+            update_progress()
+
+        """def step_5(): # COUNT
+            progress_label.config(text="Step 5: Running data manipulation task...")
+            root.update()
+            root.after(1000)  # Simulate processing
+            current_step.set(current_step.get() + 1)
+            update_progress()
+        """
+        # Function to update progress bar
+        def update_progress():
+            progress_value.set(current_step.get() * 25)
+            if current_step.get() == 4:
+                progress_label.config(text="Data manipulation completed!")
+                manipulate_button.config(state="disabled")
+
+        # Function to go to the next page
+        """def go_to_data_cleansing():
+            if current_step.get() < 4:
+                messagebox.showwarning("Incomplete Tasks", "Please wait until all data manipulation tasks are complete.")
+            else:
+                root.destroy()
+                print("Navigating to Data Cleansing...")
+        """
+        # Run all steps sequentially (simulates automation)
+        def run_all_steps():
+            # Ensure all the required dataframes exist in the input folder.
+            keys_activity_log = ["User Full Name *Anonymized", "Component", "Action", "Target"]
+            keys_user_log = ["Date", "User Full Name *Anonymized"] # "Time" was removed in cleansing - merged with "Date"
+            keys_component_code = ["Component", "Code"]
+            
+            load_required_dataframes(keys_activity_log, keys_user_log, keys_component_code)
+            
+            if check_dataframes == True:
+                step_1() # REMOVE
+                step_2() # RENAME
+                step_3() # MERGE
+                step_4() # RESHAPE
+                #step_5() # COUNT
+                
+                # Mark cleaning as complete
+                manipulation_status.set(True)
+                
+                # output() # Shows the two output options: statistics and correlation
+            else:
+                go_back()
+
+        # Add "Data Manipulation" button to start the process
+        manipulate_button = ttk.Button(root, text="Data Manipulation", command=run_all_steps)
+        manipulate_button.pack(pady=20)
+        
+        # Create a variable to track the manipulation status
+        manipulation_status = tk.BooleanVar(value=False)  # False means cleaning not complete
+        
+        # Add "Next" button at the bottom-right corner
+        next_button = ttk.Button(root, text="Next", command=open_output_results)
+        next_button.place(x=400, y=300)  # Position at the bottom-right corner
+        
+        root.mainloop()
+        
+        
+    except Exception as e:
+        messagebox.showerror("Error", f"An error occurred during data cleaning: {e}")
+    
+
+def output_results():
+    def go_back():
+        move_files_from_input_to_archive()
+        root.destroy()
+        upload_files()
+    
+    def open_output_statistics():
+        root.destroy()
+        output_statistics()
+    
+    def open_output_correlation():
+        root.destroy()
+        output_correlation()
+    
+    def show_stats_description(event):
+        # Create a new pop-up box (Toplevel window) to display the description
+        global tooltip_stats
+        tooltip_stats = tk.Toplevel(root)
+        tooltip_stats.overrideredirect(True)  # Removes the title bar and borders of the window
+        tooltip_stats.geometry(f"+{event.x_root + 10}+{event.y_root + 10}")  # Position the tooltip near the cursor
+
+        # Set the tooltip label with blue or black text and a light background
+        tooltip_label = ttk.Label(
+            tooltip_stats,
+            text=(
+                "Select 'Output Statistics' "
+                "to view the mean, mode, and median for the components: Quiz, Assignment, "
+                "Attendance, and Survey:\n"
+                "    a. For each month\n"
+                "    b. For the entire 13-week academic semester"
+            ),
+            font=("Arial", 10),
+            justify="left",
+            background="lightyellow",  # Background color of the tooltip
+            foreground="blue",  # Text color (blue or black, depending on preference)
+            relief="solid",  # Border style for the tooltip
+            padding=5
+        )
+        tooltip_label.pack()
+
+    def hide_stats_description(event):
+        # Destroy the tooltip when the mouse leaves the button
+        if 'tooltip_stats' in globals():
+            tooltip_stats.destroy()
+
+    def show_correlation_description(event):
+        # Create a new pop-up box (Toplevel window) to display the description
+        global tooltip_correlation
+        tooltip_correlation = tk.Toplevel(root)
+        tooltip_correlation.overrideredirect(True)  # Removes the title bar and borders of the window
+        tooltip_correlation.geometry(f"+{event.x_root + 10}+{event.y_root + 10}")  # Position the tooltip near the cursor
+
+        # Set the tooltip label with blue or black text and a light background
+        tooltip_label = ttk.Label(
+            tooltip_correlation,
+            text=(
+                "Select 'Output Correlation' to view a graph that displays user interactions with "
+                "the following components: Assignment, Quiz, Lecture, Book, Project, and Course."
+            ),
+            font=("Arial", 10),
+            justify="left",
+            background="lightyellow",  # Background color of the tooltip
+            foreground="blue",  # Text color (blue or black, depending on preference)
+            relief="solid",  # Border style for the tooltip
+            padding=5
+        )
+        tooltip_label.pack()
+
+    def hide_correlation_description(event):
+        # Destroy the tooltip when the mouse leaves the button
+        if 'tooltip_correlation' in globals():
+            tooltip_correlation.destroy()
+
+    # Initialize main window
+    root = tk.Tk()
+    root.title("Output Results")
+    root.geometry("500x350")
+
+    # Apply the dark theme
+    sv_ttk.set_theme("dark")
+
+    # Back button at the top left corner
+    back_button = ttk.Button(root, text="Back", command=go_back)
+    back_button.place(x=10, y=10)
+
+    # Title
+    title_label = ttk.Label(root, text="Output Results", font=("Arial", 16, "bold"))
+    title_label.pack(pady=30)
+
+    # Buttons for Output Statistics and Output Correlation
+    stats_button = ttk.Button(root, text="Output Statistics", command=open_output_statistics)
+    stats_button.pack(pady=10)
+
+    correlation_button = ttk.Button(root, text="Output Correlation", command=open_output_correlation)
+    correlation_button.pack(pady=10)
+
+    # Bind the hover events to show and hide the pop-up tooltips
+    stats_button.bind("<Enter>", show_stats_description)
+    stats_button.bind("<Leave>", hide_stats_description)
+
+    correlation_button.bind("<Enter>", show_correlation_description)
+    correlation_button.bind("<Leave>", hide_correlation_description)
+
+    root.mainloop()
+   
+
+def output_statistics():
+    def go_back():
+        root.destroy()
+        output_results()
+    
+    def open_monthly_output_statistics():
+        root.destroy()
+        monthly_output_statistics()
+        
+    def open_semester_output_statistics():
+        root.destroy()
+        semester_output_statistics()
+        #print("The semester_output_statistics code will be here........")
+    
+    def monthly_output_statistics():
+        
+        def go_back():
+            root.destroy()
+            output_statistics()
+        
+        print("The monthly_output_statistics code will be here........")
+        
+        # Define the folder paths
+        base_drive = "C:/" if platform.system() == "Windows" else "/"
+        base_path = os.path.join(base_drive, "Summative_Data_Set")
+        input_folder = os.path.join(base_path, "Input")
+
+        # Initialize variables to store the valid file path and DataFrame
+        file_reshaped_log_path = None
+        df_reshaped_log = None
+
+        # Check if the input folder exists
+        if not os.path.exists(input_folder):
+            #raise Exception(f"Input folder '{input_folder}' does not exist.")
+            messagebox.showinfo("Terminating", f"Input folder '{input_folder}' does not exist. Please run the application again.")
+            exit() # If a folder is missing, terminate the app. When it will run again, the first step will create the folder structure.
+            
+
+        # Iterate through files in the input folder
+        for file_name in os.listdir(input_folder):
+            if file_name.endswith('.json'):
+                file_path = os.path.join(input_folder, file_name)
+                
+                # Attempt to load and validate the JSON file
+                try:
+                    with open(file_path, 'r') as f:
+                        data = json.load(f)  # Parse JSON file
+                except ValueError:
+                    print(f"Skipping invalid JSON file: {file_name}")
+                    continue
+                
+                # Validate the presence of "Monthly_Interactions"
+                valid_file = True
+                for entry in data:
+                    if "Monthly_Interactions" not in entry or not isinstance(entry["Monthly_Interactions"], list):
+                        valid_file = False
+                        break
+                
+                # If valid, store the file path and convert to DataFrame
+                if valid_file:
+                    file_reshaped_log_path = file_path
+                    df_reshaped_log = pd.DataFrame(data)
+                    break  # Exit the loop as we found the required file
+
+        # Ensure a valid file is found and loaded
+        if df_reshaped_log is None:
+            messagebox.showerror(
+                "Error",
+                "No JSON file with the required structure ('Monthly_Interactions') was found.\nYou will now be redirected back to the upload screen."
+            )
+            go_back()
+        else:
+            print(f"Successfully validated and loaded file: {file_reshaped_log_path}")
+            print("DataFrame preview:")
+            print(df_reshaped_log.head())
+        
+        # Initialize results DataFrame
+        all_data = []
+        for _, row in df_reshaped_log.iterrows():
+            monthly_interactions = row["Monthly_Interactions"]
+            if not isinstance(monthly_interactions, list):
+                continue
+            for interaction in monthly_interactions:
+                interaction["User_ID"] = row.get("User_ID", None)  # Add User_ID to each interaction
+                all_data.append(interaction)
+
+        # Convert interactions to a DataFrame
+        interactions_df = pd.DataFrame(all_data)
+        print("Interactions DataFrame preview:")
+        print(interactions_df.head())
+
+        # Group by Month and calculate statistics for each component
+        results = {}
+        components = ["Quiz", "Lecture", "Assignment", "Attendence", "Survey"]
+
+        for month, group in interactions_df.groupby("Month"):
+            results[month] = {}
+            for component in components:
+                if component in group.columns:
+                    values = group[component].dropna()
+                    mean = values.mean()
+                    median = values.median()
+                    mode = values.mode()
+                    mode_value = mode.iloc[0] if not mode.empty else "N/A"
+                else:
+                    mean, median, mode_value = 0, 0, "N/A"
+                results[month][component] = {"Mean": mean, "Mode": mode_value, "Median": median}
+
+        # Initialize the main window
+        root = tk.Tk()
+        root.title("Monthly Output Statistics")
+        root.geometry("800x600")
+
+        # Apply the dark theme
+        sv_ttk.set_theme("dark")
+
+        # Back button - using grid instead of pack
+        back_button = ttk.Button(root, text="Back", command=go_back)
+        back_button.grid(row=0, column=0, padx=10, pady=10, sticky="w")
+
+        # Title - using grid instead of pack
+        title_label = ttk.Label(root, text="Monthly Output Statistics", font=("Arial", 16, "bold"))
+        title_label.grid(row=1, column=0, padx=10, pady=20)
+
+        # Create a Treeview for displaying the statistics
+        treeview = ttk.Treeview(root, columns=("Month", "Component", "Mean", "Mode", "Median"), show="headings", height=15)
+        treeview.heading("Month", text="Month")
+        treeview.heading("Component", text="Component")
+        treeview.heading("Mean", text="Mean")
+        treeview.heading("Mode", text="Mode")
+        treeview.heading("Median", text="Median")
+
+        # Add the statistics data to the Treeview
+        for month, components in results.items():
+            for component, stats in components.items():
+                treeview.insert("", "end", values=(month, component, f"{stats['Mean']:.2f}", stats['Mode'], f"{stats['Median']:.2f}"))
+
+        # Add the Treeview and the Scrollbars using the grid layout
+        treeview.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
+        
+        # Vertical Scrollbar for the Treeview - using grid
+        treeview_scroll_y = ttk.Scrollbar(root, orient="vertical", command=treeview.yview)
+        treeview.configure(yscrollcommand=treeview_scroll_y.set)
+        treeview_scroll_y.grid(row=2, column=1, sticky="ns", padx=(0, 10), pady=10)
+
+        # Horizontal Scrollbar for the Treeview - using grid
+        treeview_scroll_x = ttk.Scrollbar(root, orient="horizontal", command=treeview.xview)
+        treeview.configure(xscrollcommand=treeview_scroll_x.set)
+        treeview_scroll_x.grid(row=3, column=0, sticky="ew", padx=10, pady=(0, 10))
+
+        # Configure the grid to expand with window resizing
+        root.grid_rowconfigure(2, weight=1)
+        root.grid_rowconfigure(3, weight=0)
+        root.grid_columnconfigure(0, weight=1)
+
+        root.mainloop()
+        
+        
+    def semester_output_statistics():
+        
+        def go_back():
+            root.destroy()
+            output_statistics()
+        
+        # Define the folder paths
+        base_drive = "C:/" if platform.system() == "Windows" else "/"
+        base_path = os.path.join(base_drive, "Summative_Data_Set")
+        input_folder = os.path.join(base_path, "Input")
+
+        # Initialize variables to store the valid file path and DataFrame
+        file_reshaped_log_path = None
+        df_reshaped_log = None
+
+        # Check if the input folder exists
+        if not os.path.exists(input_folder):
+            #raise Exception(f"Input folder '{input_folder}' does not exist.")
+            messagebox.showinfo("Terminating", f"Input folder '{input_folder}' does not exist. Please run the application again.")
+            exit() # If a folder is missing, terminate the app. When it will run again, the first step will create the folder structure.
+
+        # Iterate through files in the input folder
+        for file_name in os.listdir(input_folder):
+            if file_name.endswith('.json'):
+                file_path = os.path.join(input_folder, file_name)
+
+                # Attempt to load and validate the JSON file
+                try:
+                    with open(file_path, 'r') as f:
+                        data = json.load(f)  # Parse JSON file
+                except ValueError:
+                    print(f"Skipping invalid JSON file: {file_name}")
+                    continue
+
+                # Validate the presence of "Monthly_Interactions"
+                valid_file = True
+                for entry in data:
+                    if "Monthly_Interactions" not in entry or not isinstance(entry["Monthly_Interactions"], list):
+                        valid_file = False
+                        break
+
+                # If valid, store the file path and convert to DataFrame
+                if valid_file:
+                    file_reshaped_log_path = file_path
+                    df_reshaped_log = pd.DataFrame(data)
+                    break  # Exit the loop as we found the required file
+
+        # Ensure a valid file is found and loaded
+        if df_reshaped_log is None:
+            messagebox.showerror(
+                "Error",
+                "No JSON file with the required structure ('Monthly_Interactions') was found.\nYou will now be redirected back to the upload screen."
+            )
+            go_back()
+        else:
+            print(f"Successfully validated and loaded file: {file_reshaped_log_path}")
+            print("DataFrame preview:")
+            print(df_reshaped_log.head())
+
+        # Initialize results DataFrame for the semester statistics
+        all_data = []
+        for _, row in df_reshaped_log.iterrows():
+            monthly_interactions = row["Monthly_Interactions"]
+            if not isinstance(monthly_interactions, list):
+                continue
+            for interaction in monthly_interactions:
+                interaction["User_ID"] = row.get("User_ID", None)  # Add User_ID to each interaction
+                all_data.append(interaction)
+
+        # Convert interactions to a DataFrame
+        interactions_df = pd.DataFrame(all_data)
+        print("Interactions DataFrame preview:")
+        print(interactions_df.head())
+
+        # Aggregate statistics across all months (entire semester)
+        results = {}
+        components = ["Quiz", "Lecture", "Assignment", "Attendence", "Survey"]
+
+        # Aggregate all data for the semester (across months)
+        results["Semester Total"] = {}
+        for component in components:
+            if component in interactions_df.columns:
+                values = interactions_df[component].dropna()
+                mean = values.mean()
+                median = values.median()
+                mode = values.mode()
+                mode_value = mode.iloc[0] if not mode.empty else "N/A"
+            else:
+                mean, median, mode_value = 0, 0, "N/A"
+            results["Semester Total"][component] = {"Mean": mean, "Mode": mode_value, "Median": median}
+
+        # Initialize the main window
+        root = tk.Tk()
+        root.title("Semester Output Statistics")
+        root.geometry("800x600")
+
+        # Apply the dark theme
+        sv_ttk.set_theme("dark")
+
+        # Back button - using grid instead of pack
+        back_button = ttk.Button(root, text="Back", command=go_back)
+        back_button.grid(row=0, column=0, padx=10, pady=10, sticky="w")
+
+        # Title - using grid instead of pack
+        title_label = ttk.Label(root, text="Semester Output Statistics", font=("Arial", 16, "bold"))
+        title_label.grid(row=1, column=0, padx=10, pady=20)
+
+        # Create a Treeview for displaying the statistics
+        treeview = ttk.Treeview(root, columns=("Period", "Component", "Mean", "Mode", "Median"), show="headings", height=15)
+        treeview.heading("Period", text="Period")
+        treeview.heading("Component", text="Component")
+        treeview.heading("Mean", text="Mean")
+        treeview.heading("Mode", text="Mode")
+        treeview.heading("Median", text="Median")
+
+        # Add the semester statistics data to the Treeview
+        for period, components in results.items():
+            for component, stats in components.items():
+                treeview.insert("", "end", values=(period, component, f"{stats['Mean']:.2f}", stats['Mode'], f"{stats['Median']:.2f}"))
+
+        # Add the Treeview and the Scrollbars using the grid layout
+        treeview.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
+
+        # Vertical Scrollbar for the Treeview - using grid
+        treeview_scroll_y = ttk.Scrollbar(root, orient="vertical", command=treeview.yview)
+        treeview.configure(yscrollcommand=treeview_scroll_y.set)
+        treeview_scroll_y.grid(row=2, column=1, sticky="ns", padx=(0, 10), pady=10)
+
+        # Horizontal Scrollbar for the Treeview - using grid
+        treeview_scroll_x = ttk.Scrollbar(root, orient="horizontal", command=treeview.xview)
+        treeview.configure(xscrollcommand=treeview_scroll_x.set)
+        treeview_scroll_x.grid(row=3, column=0, sticky="ew", padx=10, pady=(0, 10))
+
+        # Configure the grid to expand with window resizing
+        root.grid_rowconfigure(2, weight=1)
+        root.grid_rowconfigure(3, weight=0)
+        root.grid_columnconfigure(0, weight=1)
+
+        root.mainloop()
+        
+        
+    # Initialize the main window
+    root = tk.Tk()
+    root.title("Output Statistics")
+    root.geometry("400x350")
+
+    # Apply the dark theme
+    sv_ttk.set_theme("dark")
+
+    # Back button at the top left corner
+    back_button = ttk.Button(root, text="Back", command=go_back)
+    back_button.place(x=10, y=10)
+
+    # Title
+    title_label = ttk.Label(root, text="Output Statistics", font=("Arial", 16, "bold"))
+    title_label.pack(pady=20)
+
+    # Buttons for Monthly Output Statistics and Academic Semester Output Statistics
+    monthly_button = ttk.Button(root, text="Monthly Output Statistics", command=open_monthly_output_statistics)
+    monthly_button.pack(pady=10)
+
+    semester_button = ttk.Button(root, text="Academic Semester Output Statistics", command=open_semester_output_statistics)
+    semester_button.pack(pady=10)
+
+    root.mainloop()
+
+def output_correlation():
+    print("Output correlation...")
+
+    def go_back():
+        plt.close(fig)
+        #root.quit() # Exit the Tkinter loop
+        root.destroy()
+        output_results()
+    
+    def go_back_to_upload():
+        root.destroy()
+        upload_files()
+     
+    def on_closing():
+        
+        """Handles the close event of the window to clean up and exit."""
+        print("Closing the window...")
+        plt.close(fig)
+        root.quit()  # This will stop the Tkinter event loop
+        root.destroy()  # This will destroy the root window and clean up
+        #sys.exit() # Ensures the script exits completely
+    
+    # Define the folder paths
+    base_drive = "C:/" if platform.system() == "Windows" else "/"
+    base_path = os.path.join(base_drive, "Summative_Data_Set")
+    input_folder = os.path.join(base_path, "Input")
+
+    # Initialize variables to store the valid file path and DataFrame
+    file_reshaped_log_path = None
+    df_reshaped_log = None
+
+    # Check if the input folder exists
+    if not os.path.exists(input_folder):
+        #raise Exception(f"Input folder '{input_folder}' does not exist.")
+        messagebox.showinfo("Terminating", f"Input folder '{input_folder}' does not exist. Please run the application again.")
+        exit() # If a folder is missing, terminate the app. When it will run again, the first step will create the folder structure.
+
+    # Iterate through files in the input folder
+    for file_name in os.listdir(input_folder):
+        if file_name.endswith('.json'):
+            file_path = os.path.join(input_folder, file_name)
+
+            # Attempt to load and validate the JSON file
+            try:
+                with open(file_path, 'r') as f:
+                    data = json.load(f)  # Parse JSON file
+            except ValueError:
+                print(f"Skipping invalid JSON file: {file_name}")
+                continue
+
+            # Validate the presence of "Monthly_Interactions"
+            valid_file = True
+            for entry in data:
+                if "Monthly_Interactions" not in entry or not isinstance(entry["Monthly_Interactions"], list):
+                    valid_file = False
+                    break
+
+            # If valid, store the file path and convert to DataFrame
+            if valid_file:
+                file_reshaped_log_path = file_path
+                df_reshaped_log = pd.DataFrame(data)
+                break  # Exit the loop as we found the required file
+
+    # Ensure a valid file is found and loaded
+    if df_reshaped_log is None:
+        messagebox.showerror(
+            "Error",
+            "No JSON file with the required structure ('Monthly_Interactions') was found.\nYou will now be redirected back to the upload screen."
+        )
+        go_back()
+    else:
+        print(f"Successfully validated and loaded file: {file_reshaped_log_path}")
+        print("DataFrame preview:")
+        print(df_reshaped_log.head())
+
+    # Extract interactions for correlation analysis
+    interactions_data = []
+    for _, row in df_reshaped_log.iterrows():
+        monthly_interactions = row.get("Monthly_Interactions", [])
+        for interaction in monthly_interactions:
+            interactions_data.append({
+                "Assignment": interaction.get("Assignment", 0),
+                "Quiz": interaction.get("Quiz", 0),
+                "Lecture": interaction.get("Lecture", 0),
+                "Book": interaction.get("Book", 0),
+                "Project": interaction.get("Project", 0),
+                "Course": interaction.get("Course", 0),
+            })
+    correlation_matrix = pd.DataFrame(interactions_data)
+
+    # Handle NaN values in the correlation matrix
+    correlation_matrix = correlation_matrix.fillna(0)  # Replace NaN with 0
+    
+    # Calculate the correlation matrix
+    correlation_matrix = correlation_matrix.corr(method='pearson') # spearman, kendall, pearson  
+    
+    # Set the Matplotlib figure to match the dark theme
+    plt.style.use('dark_background')  # Use a dark background for the plot
+
+    # Plot the correlation heatmap
+    fig, ax = plt.subplots(figsize=(8, 6))
+    sns.heatmap(correlation_matrix, annot=True, cmap="coolwarm", fmt=".2f", linewidths=0.5, ax=ax)
+    ax.set_title("User Interaction Correlation")
+    plt.tight_layout()
+
+    # Save the plot as an image
+    #input_folder = "Input"  # Adjust the folder path as needed
+    os.makedirs(input_folder, exist_ok=True)
+    graph_path = os.path.join(input_folder, "correlation_heatmap.png")
+    plt.savefig(graph_path)
+    print(f"Plot saved as image at: {graph_path}")
+
+    # Create the Tkinter GUI
+    root = tk.Tk()
+    root.title("Output Correlation")
+    root.geometry("900x700")
+
+    # Apply the dark theme using sv_ttk
+    sv_ttk.set_theme("dark")
+
+    # Back button at the top-left corner
+    back_button = ttk.Button(root, text="Back", command=go_back)
+    back_button.place(x=10, y=10)  # Position at the top-left corner
+
+    # Embed the plot into the Tkinter window
+    canvas = FigureCanvasTkAgg(fig, master=root)
+    canvas.draw()
+    canvas.get_tk_widget().pack(fill="both", expand=True, padx=20, pady=40)
+    
+    # Bind the close button (x) to our custom close function
+    root.protocol("WM_DELETE_WINDOW", on_closing)
+    
+    # Start the Tkinter event loop
+    root.mainloop()
+    
+    
+    
+    
+    
+
+
+
+def data_cleansing_page():
+    def go_back():
+        move_files_from_input_to_archive()
+        root.destroy()
+        upload_files()
+
+    def open_data_manipulation():
+        if data_cleaning_complete():
+            # messagebox.showinfo("Proceeding", "Data Cleansing is complete. You can now proceed to the next step.")
+            root.destroy()
+            data_manipulation()  # Proceed to the next step (data manipulation)
+        else:
+            messagebox.showwarning("Data Cleansing Incomplete", "Data cleansing must be completed before proceeding.")
+
+    def data_cleaning_complete():
+        # Check if data cleaning is complete
+        return cleaning_status.get()  # assuming it's a BooleanVar that is set when cleaning is done
+
+    def perform_data_cleaning():
+        try:
+            # Step 1: Convert CSV to JSON
+            csv_to_json()
+            # Step 2: Validate that activity_log and user_log files match
+            files_match = activity_user_files_match()
+            
+            if not files_match:
+                messagebox.showerror(
+                    "Validation Error", 
+                    "Row counts do not match between activity_log and user_log. Please re-upload corrected files."
+                )
+                go_back()
+                return
+            
+            # Step 3: Perform User Log Cleaning
+            user_log_cleaning()
+            
+            # Step 4: Perform Activity Log and Component Code Cleaning
+            activity_log_component_code_cleaning()
+            
+            # Mark cleaning as complete
+            cleaning_status.set(True)
+            messagebox.showinfo("Success", "Data cleaning is complete!")
+            
+            data_cleaning_button.config(state="disabled")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred during data cleaning: {e}")
+
+    root = tk.Tk()
+    root.title("Data Cleansing")
+    root.geometry("500x350")
+
+    # Apply dark theme
+    sv_ttk.set_theme("dark")
+
+    # Add a Back button at the top-left corner
+    back_button = ttk.Button(root, text="Back", command=go_back)
+    back_button.place(x=10, y=10)
+
+    # Add a label with the description about data cleansing
+    description_label = ttk.Label(
+        root,
+        text="Clean your data to ensure the dataset is accurate. Several validations will be performed before proceeding.",
+        wraplength=400,
+        justify="center"
+    )
+    description_label.pack(pady=20)
+
+    # Add a "Data Cleaning" button that performs the data cleaning process
+    data_cleaning_button = ttk.Button(root, text="Data Cleaning", command=perform_data_cleaning)
+    data_cleaning_button.pack(pady=10)
+
+    # Create a variable to track the cleaning status
+    cleaning_status = tk.BooleanVar(value=False)  # False means cleaning not complete
+
+    # Add a "Next" button at the bottom-right corner
+    next_button = ttk.Button(root, text="Next", command=open_data_manipulation)
+    next_button.place(x=400, y=300)
+
+    root.mainloop()
+
+
+def activity_user_files_match():
+    try:
+        # Define the folder paths
+        base_drive = "C:/" if platform.system() == "Windows" else "/"
+        base_path = os.path.join(base_drive, "Summative_Data_Set")
+        input_folder = os.path.join(base_path, "Input")
+        
+        # Check if the input folder exists
+        if not os.path.exists(input_folder):
+            #raise Exception(f"Input folder '{input_folder}' does not exist.")
+            messagebox.showinfo("Terminating", f"Input folder '{input_folder}' does not exist. Please run the application again.")
+            exit() # If a folder is missing, terminate the app. When it will run again, the first step will create the folder structure.
+        
+        
+        # Required keys for activity_log and component_code files
+        keys_activity_log = ["User Full Name *Anonymized", "Component", "Action", "Target"]
+        keys_user_log = ["Date", "Time", "User Full Name *Anonymized"]
+        
+        # Identify files with required keys
+        file_activity_log_path = None
+        file_user_log_path = None
+        df_activity_log = None
+        df_user_log = None
+        
+        for file_name in os.listdir(input_folder):
+            if file_name.endswith('.json'):
+                file_path = os.path.join(input_folder, file_name)
+                
+                # Load the JSON file into a DataFrame
+                try:
+                    df = pd.read_json(file_path)
+                except ValueError:
+                    print(f"Skipping invalid JSON file: {file_name}")
+                    continue
+                
+                # Check if it matches the activity_log file structure
+                if set(keys_activity_log).issubset(df.columns) and file_activity_log_path is None:
+                    file_activity_log_path = file_path
+                    df_activity_log = df
+                
+                # Check if it matches the second file structure
+                elif set(keys_user_log).issubset(df.columns) and file_user_log_path is None:
+                    file_user_log_path = file_path
+                    df_user_log = df
+        
+        # Validate both files are found
+        if file_activity_log_path and file_user_log_path:
+            
+            # Validate the number of rows
+            if len(df_activity_log) != len(df_user_log):
+                print("Row counts do not match between activity_log and user_log.")
+                return False
+            
+            print("Row counts match between activity_log and user_log.")
+            return True
+        
+        return False
+        
+    except Exception as e:
+        raise Exception(f"Error during data preparation: {e}") 
+        messagebox.showerror("Error", f"Error '{e}'. Please run the application again.")
+        exit() # If a folder is missing, terminate the app. When it will run again, the first step will create the folder structure.
+
+def activity_log_component_code_cleaning():
+    try:
+        def go_back():
+            move_files_from_input_to_archive()
+            root.destroy()
+            upload_files()
+            
+        # Define the folder paths
+        base_drive = "C:/" if platform.system() == "Windows" else "/"
+        base_path = os.path.join(base_drive, "Summative_Data_Set")
+        input_folder = os.path.join(base_path, "Input")
+        
+        if not os.path.exists(input_folder):
+            #raise Exception(f"Input folder '{input_folder}' does not exist.")
+            messagebox.showinfo("Terminating", f"Input folder '{input_folder}' does not exist. Please run the application again.")
+            exit() # If a folder is missing, terminate the app. When it will run again, the first step will create the folder structure.
+        
+        keys_activity_log = ["User Full Name *Anonymized", "Component", "Action", "Target"]
+        keys_component_code = ["Component", "Code"]
+
+        file_activity_log_path = None
+        file_component_code_path = None
+        df_activity_log = None
+        df_component_code = None
+
+        # Load JSON files
+        for file_name in os.listdir(input_folder):
+            if file_name.endswith('.json'):
+                file_path = os.path.join(input_folder, file_name)
+                try:
+                    df = pd.read_json(file_path)
+                except ValueError:
+                    print(f"Skipping invalid JSON file: {file_name}")
+                    continue
+
+                if set(keys_activity_log).issubset(df.columns) and file_activity_log_path is None:
+                    file_activity_log_path = file_path
+                    df_activity_log = df
+                elif set(keys_component_code).issubset(df.columns) and file_component_code_path is None:
+                    file_component_code_path = file_path
+                    df_component_code = df
+
+        if not (file_activity_log_path and file_component_code_path):
+            print("Required files not found.")
+            return
+        
+        # Check valid components
+        if "Component" not in df_component_code.columns or df_component_code.empty:
+            #raise Exception("The Component_Code file does not have valid entries in the 'Component' column.")
+            messagebox.showinfo("Data Validation Error", f"The Component_Code file does not have valid entries in the 'Component' column.")
+            go_back()
+        
+        valid_components = set(df_component_code["Component"].dropna())
+        if not valid_components:
+            #raise Exception("No valid components found in the Component_Code file.")
+            messagebox.showinfo("Data Validation Error", "No valid components found in the Component_Code file.")
+            go_back()
+
+        print(f"Valid components loaded: {valid_components}")
+
+        # Replacement logic
+        replacements = 0
+        def match_component(row_component, valid_components):
+            nonlocal replacements
+            for valid_component in valid_components:
+                if valid_component in row_component and row_component != valid_component:
+                    replacements += 1
+                    return valid_component
+            return row_component + "_new"
+
+        # Apply matching to the Component column
+        if "Component" in df_activity_log.columns:
+            df_activity_log["Component"] = df_activity_log["Component"].apply(
+                lambda x: match_component(x, valid_components)
+            )
+
+            # Save the updated DataFrame
+            def save_with_cleaned_suffix(file_path, data_frame):
+                dir_name = os.path.dirname(file_path)
+                base_name, ext = os.path.splitext(os.path.basename(file_path))
+                cleaned_file_name = f"{base_name}_cleaned{ext}"
+                cleaned_file_path = os.path.join(dir_name, cleaned_file_name)
+                data_frame.to_json(cleaned_file_path, orient="records", indent=4)
+                return cleaned_file_path
+
+            if replacements > 0:
+                cleaned_file_path = save_with_cleaned_suffix(file_activity_log_path, df_activity_log)
+                os.remove(file_activity_log_path)
+                print(f"Updated {replacements} components. Changes saved to: {cleaned_file_path}")
+            else:
+                print("No replacements were needed. All components matched exactly or were already valid.")
+        else:
+            print("The 'Component' column is missing in Activity_log file.")
+    except Exception as e:
+        print(f"Error: {e}")
+
+            
+
+def user_log_cleaning():
+    try:
+        # Define the folder paths
+        base_drive = "C:/" if platform.system() == "Windows" else "/"
+        base_path = os.path.join(base_drive, "Summative_Data_Set")
+        input_folder = os.path.join(base_path, "Input")
+        
+        # Check if the input folder exists
+        if not os.path.exists(input_folder):
+            #raise Exception(f"Input folder '{input_folder}' does not exist.")
+            messagebox.showinfo("Terminating", f"Input folder '{input_folder}' does not exist. Please run the application again.")
+            exit() # If a folder is missing, terminate the app. When it will run again, the first step will create the folder structure.
+    
+        # Required keys for the two files
+        keys_user_log = ["Date", "Time", "User Full Name *Anonymized"]
+        
+        # Identify files with required keys
+        file_user_log_path = None
+        df_user_log = None
+        
+        # Loop for each file in the /Input folder
+        for file_name in os.listdir(input_folder):
+            if file_name.endswith('.json'):
+                file_path = os.path.join(input_folder, file_name)
+                
+                # Load the JSON file into a DataFrame
+                try:
+                    df = pd.read_json(file_path)
+                except ValueError:
+                    print(f"Skipping invalid JSON file: {file_name}")
+                    continue
+                
+                # Check if it matches the first file structure
+                if set(keys_user_log).issubset(df.columns) and file_user_log_path is None:
+                    file_user_log_path = file_path
+                    df_user_log = df
+        
+        if file_user_log_path:
+            print(f"Found required file: {file_user_log_path}")
+            
+            # Fill empty or null 'Time' values with NaT
+            df['Time'] = df['Time'].fillna('NaT').str.strip()
+            
+            df['User Full Name *Anonymized'] = df['User Full Name *Anonymized'].replace('', pd.NA).fillna(0).astype('int64')
+
+            # Convert 'Time' to a time type, assigning NaT for invalid times
+            df['Time'] = pd.to_datetime(df['Time'], format="%H:%M:%S", errors='coerce').dt.time
+
+            # Convert 'Date' to datetime format
+            df['Date'] = pd.to_datetime(df['Date'], format="%d/%m/%Y %H:%M", errors='coerce')
+            
+            # Combine 'Date' and 'Time' into a single datetime string
+            def combine_date_time(row):
+                if pd.notnull(row['Date']) and pd.notnull(row['Time']):
+                    return datetime.combine(row['Date'], row['Time']).strftime("%d/%m/%Y %H:%M:%S")
+                elif pd.notnull(row['Date']):  # Handle missing Time with NaT
+                    return f"{row['Date'].strftime('%d/%m/%Y')} NaT"
+                return None  # Return None if 'Date' is invalid
+
+            df['Date'] = df.apply(combine_date_time, axis=1)
+
+            # Drop the 'Time' column
+            df.drop(columns=['Time'], inplace=True)
+
+            # Convert DataFrame to JSON string
+            json_content = df.to_json(orient='records', indent=4)
+
+            # Replace escaped slashes in the JSON string
+            json_content = json_content.replace('\\/', '/')
+
+            with open(file_user_log_path, 'w', encoding='utf-8') as file:
+                file.write(json_content)
+            
+            print(f"User Log JSON updated with unescaped slashes at: {file_user_log_path}\n")
+            
+        else:
+            print(f"{file_user_log_path} was not found.")
+    
+    except Exception as e:
+        print(f"Error occurred: {e}")
+
+def csv_to_json():
+    """
+    Converts all CSV files in the input folder to JSON files and deletes the original CSV files.
+
+    Args:
+        input_folder (str): Path to the folder containing CSV files.
+    """
+    try:
+        
+        # Define the folder paths
+        base_drive = "C:/" if platform.system() == "Windows" else "/"
+        base_path = os.path.join(base_drive, "Summative_Data_Set")
+        input_folder = os.path.join(base_path, "Input")
+        
+        # Check if the input folder exists
+        if not os.path.exists(input_folder):
+            # raise Exception(f"Input folder '{input_folder}' does not exist.")
+            messagebox.showinfo("Terminating", f"Input folder '{input_folder}' does not exist. Please run the application again.")
+            exit() # If a folder is missing, terminate the app. When it will run again, the first step will create the folder structure.
+        
+        # Get the list of all CSV files in the input folder
+        csv_files = [f for f in os.listdir(input_folder) if f.endswith('.csv')]
+        
+        if not csv_files:
+            print("No CSV files found in the input folder.")
+            return
+        
+        # Process each CSV file
+        for file_name in csv_files:
+            csv_file_path = os.path.join(input_folder, file_name)
+            json_file_name = os.path.splitext(file_name)[0] + ".json"
+            json_file_path = os.path.join(input_folder, json_file_name)
+
+            # Convert CSV to JSON
+            with open(csv_file_path, mode='r', newline='', encoding='utf-8') as csv_file:
+                csv_reader = csv.DictReader(csv_file)
+                data = [row for row in csv_reader]
+
+                with open(json_file_path, mode='w', encoding='utf-8') as json_file:
+                    json.dump(data, json_file, indent=4)
+
+            # Delete the original CSV file
+            os.remove(csv_file_path)
+            print(f"Converted and deleted: {file_name}")
+
+        print("All CSV files in the input folder have been processed.")
+
+    except Exception as e:
+        print(f"Error occurred: {e}")
+
+
+def move_files_from_input_to_archive():
+    # Paths
+    base_drive = "C:/" if platform.system() == "Windows" else "/"
+    base_path = os.path.join(base_drive, "Summative_Data_Set")
+    input_folder = os.path.join(base_path, "Input")
+    archive_folder = os.path.join(base_path, "Archive")
+
+    # Ensure Archive folder exists
+    if not os.path.exists(archive_folder):
+        os.makedirs(archive_folder)
+    
+    # Create a new timestamped folder in the Archive
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    new_archive_path = os.path.join(archive_folder, timestamp)
+    os.makedirs(new_archive_path)  # Create the new archive folder
+
+    # Move files from Input to the new archive folder
+    for file in os.listdir(input_folder):
+        file_path = os.path.join(input_folder, file)
+        if os.path.isfile(file_path):  # Ensure it is a file
+            shutil.move(file_path, os.path.join(new_archive_path, file))
+
+    
+def historical_data():
+    def go_back():
+        move_files_from_input_to_archive()
+        app.destroy()
+        home_page()
+
+    def list_valid_folders():
+        valid_folders = []
+        for folder_name in os.listdir(archive_folder):
+            folder_path = os.path.join(archive_folder, folder_name)
+            if os.path.isdir(folder_path):
+                reshaped_file = os.path.join(folder_path, "reshaped_data.json")
+                merged_file = os.path.join(folder_path, "merged_activity_and_user_log.json")
+                if os.path.exists(reshaped_file) and os.path.exists(merged_file):
+                    valid_folders.append(folder_name)
+        return valid_folders
+
+    def open_folder(folder_path):
+        if platform.system() == "Windows":
+            os.startfile(folder_path)
+        elif platform.system() == "Darwin":  # macOS
+            subprocess.Popen(["open", folder_path])
+        else:  # Linux
+            subprocess.Popen(["xdg-open", folder_path])
+
+    def format_folder_name(folder_name):
+        try:
+            # Parse the folder name assuming it's in 'yyyymmdd_hhmmss' format
+            date_time_obj = datetime.strptime(folder_name, "%Y%m%d_%H%M%S")
+            # Format it into a more user-friendly string
+            return date_time_obj.strftime("%d %b %Y %H:%M:%S")
+        except ValueError:
+            # If the folder name doesn't match the expected format, return it as-is
+            return folder_name
+    
+    def select_historical_dataset(source_folder):
+        copy_files_to_input_folder(source_folder)
+        app.destroy()
+        messagebox.showinfo("Proceeding", "You will now be redirected to the output results page to view the statistical results.")
+        output_results()
+    
+    def copy_files_to_input_folder(source_folder):
+        # Ensure the source folder exists
+        if not os.path.exists(source_folder):
+            print(f"The folder {source_folder} does not exist.")
+            return
+        
+        # Get all files in the source folder (not directories)
+        files = [f for f in os.listdir(source_folder) if os.path.isfile(os.path.join(source_folder, f))]
+
+        # Copy each file to the input folder
+        for file in files:
+            source_file = os.path.join(source_folder, file)
+            destination_file = os.path.join(input_folder, file)
+
+            try:
+                # Copy file to the input_folder (overwrite if the file already exists)
+                shutil.copy2(source_file, destination_file)
+                print(f"Copied {file} to {input_folder}")
+            except Exception as e:
+                print(f"Error copying {file}: {e}")
+
+    def populate_folder_list():
+        valid_folders = list_valid_folders()
+        for index, folder_name in enumerate(valid_folders, start=1):
+            formatted_name = format_folder_name(folder_name)  # Format the folder name
+            
+            folder_frame = ttk.Frame(scrollable_frame)
+            folder_frame.pack(anchor="w", fill="x", padx=20, pady=5)
+
+            folder_label = ttk.Label(folder_frame, text=f"{index}. {formatted_name}")
+            folder_label.pack(side="left")
+
+            # View button
+            view_button = ttk.Button(folder_frame, text="View Files", command=lambda path=os.path.join(archive_folder, folder_name): open_folder(path))
+            view_button.pack(side="right", padx=5)
+
+            # Select button to copy files to input folder
+            select_button = ttk.Button(folder_frame, text="Select", command=lambda path=os.path.join(archive_folder, folder_name): select_historical_dataset(path))
+            select_button.pack(side="right", padx=5)
+
+    # Define the folder paths
+    base_drive = "C:/" if platform.system() == "Windows" else "/"
+    base_path = os.path.join(base_drive, "Summative_Data_Set")
+    input_folder = os.path.join(base_path, "Input")
+    archive_folder = os.path.join(base_path, "Archive")
+
+    # Main window
+    app = tk.Tk()
+    app.title("Data Processing Application")
+    app.geometry("600x500")  # Adjust the window size as needed
+
+    # Apply the dark theme
+    sv_ttk.set_theme("dark")
+
+    # Back button at the top-left corner
+    back_button = ttk.Button(app, text="Back", command=go_back)
+    back_button.place(x=10, y=10)  # Position at the top-left corner
+
+    # Label next to the Back button
+    historical_data_label = ttk.Label(app, text="Historical Data available for statistical analysis!", font=("Arial", 14))
+    historical_data_label.place(x=100, y=10)  # Adjust the position so it's next to the back button
+
+    # Frame and scrollbar setup
+    main_frame = ttk.Frame(app)
+    main_frame.pack(fill="both", expand=True, padx=10, pady=40)  # Add top padding to avoid overlapping the Back button
+
+    canvas = tk.Canvas(main_frame)
+    scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
+    scrollable_frame = ttk.Frame(canvas)
+
+    scrollable_frame.bind(
+        "<Configure>",
+        lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+    )
+
+    canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+    canvas.configure(yscrollcommand=scrollbar.set)
+
+    canvas.pack(side="left", fill="both", expand=True)
+    scrollbar.pack(side="right", fill="y")
+
+    # Populate the list of folders with valid files
+    populate_folder_list()
+
+    # Run the Tkinter main loop
+    app.mainloop()
+
+
+# Main application window - "Landing Page"
+def home_page():
+    
+    def open_upload_page():
+        # Destroy the current app window and open the Upload Files page
+        move_files_from_input_to_archive()
+        app.destroy()
+        upload_files()
+    
+    # Exit Confirmation function
+    def confirm_exit():
+        if messagebox.askyesno("Confirm Exit", "Are you sure you want to close the application?"):
+            app.destroy()
+    
+    def open_historical_data():
+        move_files_from_input_to_archive()
+        app.destroy()
+        historical_data()
+    
+    # Main window
+    app = tk.Tk()
+    app.title("Data Processing Application")
+    app.geometry("500x300")
+    
+    # Apply the dark theme
+    sv_ttk.set_theme("dark")
+    
+    # Welcome message
+    welcome_label = ttk.Label(app, text="Welcome! Please choose an action.", font=("Arial", 14))
+    welcome_label.pack(pady=20)  # Add vertical padding around the label
+    
+    # Buttons
+    upload_button = ttk.Button(app, text="Upload Files", command=open_upload_page, width=20)
+    #upload_button = ttk.Button(app, text="Upload Files", width=20)
+    upload_button.pack(pady=10)
+    
+    #historical_data_button = ttk.Button(app, text="View Historical Data", command=view_historical_data, width=20)
+    historical_data_button = ttk.Button(app, text="View Historical Data", command=open_historical_data, width=20)
+    historical_data_button.pack(pady=10)
+    
+    exit_button = ttk.Button(app, text="Exit", command=confirm_exit, width=20)
+    exit_button.pack(pady=10)
+    
+    # Run the application
+    app.mainloop()
+
+if __name__ == "__main__":
+    missing_folders = check_directories()  # Check for missing directories.
+    
+    if missing_folders:  # If there are missing folders.
+        proceed = ask_user_to_proceed(missing_folders)  # Prompt the user.
+        
+        if proceed:  # User selected "Yes".
+            create_directories(missing_folders)  # Create the missing directories.
+            home_page()  # Redirect to landing page.
+        else:  # User selected "No".
+            print("The application requires these directories to operate. Terminating.")
+            messagebox.showinfo("Terminating", "The application requires these directories to operate. Terminating.")
+            exit()
+    else:  # All directories exist.
+        
+        #check_existing_files = check_existing_files()
+        home_page()
