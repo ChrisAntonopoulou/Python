@@ -22,7 +22,7 @@ Below are some of the notable projects included in this repository:
 | Project Name       | Description      | Status           |
 |--------------------|------------------|------------------|
 |Message Encryption  | Personal project exploring SQL, Pandas and GUI      | Complete         |
-|Data Analysis GUI       | Academic project focusing on Pandas, Matplotlib and Seaborn - This application accepts three CSV files, converts them to JSON, performs data cleaning and manipulation. Users interact through a GUI window, and are able to generate statistics such as mean, median, mode and Pearson correlation      | Complete        |
+|Data Analysis GUI       | Academic project focusing on Pandas, Matplotlib and Seaborn - This application accepts three CSV files, converts them to JSON, performs data cleaning and manipulation. Users interact through a GUI window, and are able to generate statistics such as mean, median, mode and Pearson correlation      | Coming soon      |
 |Quantum Circuit (Hadamard) | Applies Hadamard on two qubits and runs it on IBM's simulator      | Complete         |
 
 ## Technologies Used
