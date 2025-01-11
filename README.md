@@ -13,7 +13,7 @@ Welcome to my Python Projects Repository! This collection showcases personal and
 This repository contains a variety of Python projects ranging from small, practice-focused scripts to more comprehensive academic assignments. While these projects were primarily created for personal learning and university coursework, they also demonstrate my ability to solve problems, implement algorithms, and develop software solutions using Python.
 
 ### Highlights
-- Projects on topics of cybersecurity, data analysis, and automation
+- Projects on topics of cybersecurity, data analysis, and quantum computing
 - Focus on clean, modular and well-documented code
 
 ## Projects
