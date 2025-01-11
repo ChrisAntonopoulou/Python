@@ -23,6 +23,7 @@ Below are some of the notable projects included in this repository:
 |--------------------|------------------|------------------|
 |Message Encryption  | Personal project exploring SQL, Pandas and GUI      | Complete         |
 |Data Analysis GUI       | Academic project focusing on Pandas, Matplotlib and Seaborn - This application accepts three CSV files, converts them to JSON, performs data cleaning and manipulation. Users interact through a GUI window, and are able to generate statistics such as mean, median, mode and Pearson correlation      | Complete        |
+|Quantum Circuit (Hadamard) | Applies Hadamard on two qubits and runs it on IBM's simulator      | Complete         |
 
 ## Technologies Used
 The projects in this repository utilize a variety of Python libraries and tools, including but not limited to:
@@ -33,6 +34,7 @@ The projects in this repository utilize a variety of Python libraries and tools,
 - **GUI development**: tkinter, sv_ttk
 - **Databases**: sqlite3
 - **Encryption**: hashlib, hmac
+- **Quantum: qiskit
 
 ## Contact
 If you have any questions about this repository or specific projects, feel free to reach out:
