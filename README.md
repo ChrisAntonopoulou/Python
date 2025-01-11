@@ -34,7 +34,7 @@ The projects in this repository utilize a variety of Python libraries and tools,
 - **GUI development**: tkinter, sv_ttk
 - **Databases**: sqlite3
 - **Encryption**: hashlib, hmac
-- **Quantum: qiskit
+- **Quantum**: qiskit
 
 ## Contact
 If you have any questions about this repository or specific projects, feel free to reach out:
