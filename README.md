@@ -26,6 +26,7 @@ Below are some of the notable projects included in this repository:
 |Quantum Circuit (Hadamard) | Applies Hadamard on two qubits and runs it on IBM's simulator      | Complete         |
 |Quantum - Bloch Sphere | Represent different circuits with Bloch Sphere and IBM's simulator    | Complete         |
 |Quantum - Teleportation | Technique for transferring quantum information from a sender at one location to a receiver some distance away. Quantum teleportation is the transfer of an unknown quantum state over long distances. This process requires entanglement and therefore cannot be simulated with classical channels. | Complete         |
+|Quantum - Bernstein Vazirani's Algorithm | User provides a "hidden number" and the BV algorithm finds the secret string using one function call (oracle inquiry), thereby providing a linear speedup with respect to the classical solution. | Complete         |
 
 ## Technologies Used
 The projects in this repository utilize a variety of Python libraries and tools, including but not limited to:
