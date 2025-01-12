@@ -25,6 +25,7 @@ Below are some of the notable projects included in this repository:
 |Data Analysis GUI       | Academic project focusing on Pandas, Matplotlib and Seaborn - This application accepts three CSV files, converts them to JSON, performs data cleaning and manipulation. Users interact through a GUI window, and are able to generate statistics such as mean, median, mode and Pearson correlation      | Coming soon      |
 |Quantum Circuit (Hadamard) | Applies Hadamard on two qubits and runs it on IBM's simulator      | Complete         |
 |Quantum - Bloch Sphere | Represent different circuits with Bloch Sphere and IBM's simulator    | Complete         |
+|Quantum - Teleportation | Technique for transferring quantum information from a sender at one location to a receiver some distance away. Quantum teleportation is the transfer of an unknown quantum state over long distances. This process requires entanglement and therefore cannot be simulated with classical channels. | Complete         |
 
 ## Technologies Used
 The projects in this repository utilize a variety of Python libraries and tools, including but not limited to:
