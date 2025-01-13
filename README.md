@@ -13,7 +13,7 @@ Welcome to my Python Projects Repository! This collection showcases personal and
 This repository contains a variety of Python projects ranging from small, practice-focused scripts to more comprehensive academic assignments. While these projects were primarily created for personal learning and university coursework, they also demonstrate my ability to solve problems, implement algorithms, and develop software solutions using Python.
 
 ### Highlights
-- Projects on topics of cybersecurity, data analysis, and quantum computing
+- Projects on topics of cybersecurity, data analysis, AI and quantum computing
 - Focus on clean, modular and well-documented code
 
 ## Projects
@@ -27,6 +27,7 @@ Below are some of the notable projects included in this repository:
 |Quantum - Bloch Sphere | Represent different circuits with Bloch Sphere and IBM's simulator    | Complete         |
 |Quantum - Teleportation | Technique for transferring quantum information from a sender at one location to a receiver some distance away. Quantum teleportation is the transfer of an unknown quantum state over long distances. This process requires entanglement and therefore cannot be simulated with classical channels. | Complete         |
 |Quantum - Bernstein Vazirani's Algorithm | User provides a "hidden number" and the BV algorithm finds the secret string using one function call (oracle inquiry), thereby providing a linear speedup with respect to the classical solution. | Complete         |
+|AI - A* Search Algorithm | The A* algorithm is a powerful and widely used graph traversal and path finding algorithm. It finds the shortest path between a starting node and a goal node in a weighted graph.     | Complete         |
 
 ## Technologies Used
 The projects in this repository utilize a variety of Python libraries and tools, including but not limited to:
