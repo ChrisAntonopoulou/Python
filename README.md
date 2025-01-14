@@ -27,7 +27,9 @@ Below are some of the notable projects included in this repository:
 |Quantum - Bloch Sphere | Represent different circuits with Bloch Sphere and IBM's simulator    | Complete         |
 |Quantum - Teleportation | Technique for transferring quantum information from a sender at one location to a receiver some distance away. Quantum teleportation is the transfer of an unknown quantum state over long distances. This process requires entanglement and therefore cannot be simulated with classical channels. | Complete         |
 |Quantum - Bernstein Vazirani's Algorithm | User provides a "hidden number" and the BV algorithm finds the secret string using one function call (oracle inquiry), thereby providing a linear speedup with respect to the classical solution. | Complete         |
-|AI - A* Search Algorithm | The A* algorithm is a powerful and widely used graph traversal and path finding algorithm. It finds the shortest path between a starting node and a goal node in a weighted graph.     | Complete         |
+|AI - A* Search Algorithm (Grid)| The A* algorithm is a powerful and widely used graph traversal and path finding algorithm. It finds the shortest path between a starting node and a goal node.     | Complete         |
+|AI - A* Search Algorithm (Weighted Graph)| The A* algorithm is a powerful and widely used graph traversal and path finding algorithm. It finds the shortest path between a starting node and a goal node in a weighted graph.     | Complete         |
+|AI - Greedy Best First Search Algorithm | The GBFS is a graph traversal algorithm that is used in artificial intelligence for finding the shortest path between two points or solving problems with multiple possible solutions.    | Complete         |
 
 ## Technologies Used
 The projects in this repository utilize a variety of Python libraries and tools, including but not limited to:
