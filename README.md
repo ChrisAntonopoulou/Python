@@ -37,7 +37,7 @@ The projects in this repository utilize a variety of Python libraries and tools,
 - **Core Libraries**: os, sys, re
 - **Data Analysis**: pandas, numpy
 - **Visualisation**: matplotlib, seaborn
-- **GUI development**: tkinter, sv_ttk
+- **GUI development**: tkinter
 - **Databases**: sqlite3
 - **Encryption**: hashlib, hmac
 - **Quantum**: qiskit
